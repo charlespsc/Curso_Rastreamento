@@ -1,0 +1,17 @@
+{
+	"ulid": "01HKVQWXC30N47TKS36G42T3WH",
+	"minTime": 1704932643962,
+	"maxTime": 1704938400000,
+	"stats": {
+		"numSamples": 15467,
+		"numSeries": 456,
+		"numChunks": 456
+	},
+	"compaction": {
+		"level": 1,
+		"sources": [
+			"01HKVQWXC30N47TKS36G42T3WH"
+		]
+	},
+	"version": 1
+}
