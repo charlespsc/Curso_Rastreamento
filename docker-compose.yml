@@ -1,0 +1,84 @@
+version: '3.8'
+
+networks:
+  public:
+  monit:
+  data:
+  api:
+  
+services:
+
+  database-api-cursos:
+    image: kdpsc/alura:database-api-cursos
+    container_name: database-api-cursos
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD", "pg_isready", "-q", "-d", "postgres", "-U", "root" ]
+      timeout: 45s
+      interval: 10s
+      retries: 10
+    ports:
+      - 5432:5432
+    networks:
+      - data
+  
+  cache-api-cursos:
+    image: redis
+    container_name: cache-api-cursos
+    restart: unless-stopped
+    ports:
+      - 6379:6379
+    networks:
+      - data
+    depends_on:
+      - database-api-cursos
+
+  prometheus-api-cursos:
+    image: prom/prometheus:latest
+    user: "root:root"
+    container_name: prometheus-api-cursos
+    restart: unless-stopped
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./prometheus/prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--web.enable-lifecycle'
+    ports:
+      - 9090:9090
+    networks:
+      - monit
+      - api
+    depends_on:
+      - database-api-cursos
+
+  grafana-api-cursos:
+    image: grafana/grafana
+    user: "root:root"
+    container_name: grafana-api-cursos
+    volumes:
+      - ./grafana:/var/lib/grafana
+    restart: unless-stopped
+    ports:
+      - 3000:3000
+    networks:
+      - monit
+    depends_on:
+      - prometheus-api-cursos
+
+  loki-api-cursos:
+    image: grafana/loki
+    container_name: loki-api-cursos
+    command: 
+      - -config.file=/etc/loki/local-config.yaml
+      - -print-config-stderr=true
+    ports:
+      - 3100:3100
+    networks:
+      - api
+      - monit
+    depends_on:
+      - grafana-api-cursos
