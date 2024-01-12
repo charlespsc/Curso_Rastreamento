@@ -1,0 +1,17 @@
+{
+	"ulid": "01HKXANZXDEWVTEHPAMSAP5093",
+	"minTime": 1704997071410,
+	"maxTime": 1705003200000,
+	"stats": {
+		"numSamples": 527012,
+		"numSeries": 1569,
+		"numChunks": 4277
+	},
+	"compaction": {
+		"level": 1,
+		"sources": [
+			"01HKXANZXDEWVTEHPAMSAP5093"
+		]
+	},
+	"version": 1
+}

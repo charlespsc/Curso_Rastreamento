@@ -1,0 +1,141 @@
+version: '3.8'
+
+networks:
+  public:
+  monit:
+  data:
+  api:
+  
+services:
+
+  database-api-cursos:
+    image: kdpsc/alura:database-api-cursos
+    container_name: database-api-cursos
+    restart: unless-stopped
+    volumes:
+      - ./postgres/data:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD", "pg_isready", "-q", "-d", "postgres", "-U", "root" ]
+      timeout: 45s
+      interval: 10s
+      retries: 10
+    ports:
+      - 5432:5432
+    networks:
+      - data
+  
+  cache-api-cursos:
+    image: redis
+    container_name: cache-api-cursos
+    restart: unless-stopped
+    ports:
+      - 6379:6379
+    networks:
+      - data
+    depends_on:
+      - database-api-cursos
+
+  api-cursos:
+    build:
+      context: ./logs/
+      dockerfile: Dockerfile
+    image: api-cursos
+    container_name: api-cursos
+    environment:
+      - SPRING_REDIS_HOST=cache-api-cursos
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://database-api-cursos:5432/logsdb
+      - OTEL_SERVICE_NAME=api-cursos
+      - OTEL_TRACES_EXPORTER=otlp
+      - OTEL_METRICS_EXPORTER=none
+      - OTEL_INTEGRATION_JDBC_DATASOURCE_ENABLED=true
+      - OTEL_INSTRUMENTATION_JDBC_DATASOURCE_ENABLED=true
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://collector-api-cursos:4318/
+      - OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+    restart: unless-stopped
+    ports:
+      - 8080:8080
+    networks:
+      - api
+      - data
+    healthcheck:
+      test: "curl -sS http://api-cursos:8080/actuator/health"
+      interval: 1s
+      timeout: 30s
+      retries: 60
+    depends_on:
+      - cache-api-cursos
+
+  prometheus-api-cursos:
+    image: prom/prometheus:latest
+    user: "root:root"
+    container_name: prometheus-api-cursos
+    restart: unless-stopped
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./prometheus/prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--web.enable-lifecycle'
+    ports:
+      - 9090:9090
+    networks:
+      - monit
+      - api
+    depends_on:
+      - api-cursos
+
+  grafana-api-cursos:
+    image: grafana/grafana
+    user: "root:root"
+    container_name: grafana-api-cursos
+    volumes:
+      - ./grafana:/var/lib/grafana
+    restart: unless-stopped
+    ports:
+      - 3000:3000
+    networks:
+      - monit
+    depends_on:
+      - prometheus-api-cursos
+
+  loki-api-cursos:
+    image: grafana/loki
+    container_name: loki-api-cursos
+    command: 
+      - -config.file=/etc/loki/local-config.yaml
+      - -print-config-stderr=true
+    ports:
+      - 3100:3100
+    networks:
+      - api
+      - monit
+    depends_on:
+      - grafana-api-cursos
+      
+  collector-api-cursos:
+    image: otel/opentelemetry-collector:latest
+    container_name: collector-api-cursos
+    volumes:
+      - ./collector/otel-collector-config.yaml:/etc/otel-collector-config.yaml
+    command: ["--config=/etc/otel-collector-config.yaml"]
+    ports:
+      - 4317:4317
+      - 4318:4318
+    networks:
+      - api
+      - monit
+    depends_on:
+      - loki-api-cursos
+
+  jaeger-api-cursos:
+    image: jaegertracing/opentelemetry-all-in-one
+    container_name: jaeger-api-cursos
+    ports:
+      - 16686:16686
+    networks:
+      - monit
+    depends_on:
+      - collector-api-cursos

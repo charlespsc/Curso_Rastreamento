@@ -17,6 +17,8 @@ services:
       timeout: 45s
       interval: 10s
       retries: 10
+    volumes:
+      - ./postgres/data:/var/lib/postgresql/data
     ports:
       - 5432:5432
     networks:
@@ -32,6 +34,36 @@ services:
       - data
     depends_on:
       - database-api-cursos
+
+  api-cursos:
+    build:
+      context: ./logs/
+      dockerfile: Dockerfile
+    image: api-cursos
+    container_name: api-cursos
+    environment:
+      - SPRING_REDIS_HOST=cache-api-cursos
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://database-api-cursos:5432/logsdb
+      - OTEL_SERVICE_NAME=api-cursos
+      - OTEL_TRACES_EXPORTER=otlp
+      - OTEL_METRICS_EXPORTER=none
+      - OTEL_INTEGRATION_JDBC_DATASOURCE_ENABLED=true
+      - OTEL_INSTRUMENTATION_JDBC_DATASOURCE_ENABLED=true
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://collector-api-cursos:4318/
+      - OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+    restart: unless-stopped
+    ports:
+      - 8080:8080
+    networks:
+      - api
+      - data
+    healthcheck:
+      test: "curl -sS http://api-cursos:8080/actuator/health"
+      interval: 1s
+      timeout: 30s
+      retries: 60
+    depends_on:
+      - cache-api-cursos
 
   prometheus-api-cursos:
     image: prom/prometheus:latest
@@ -53,7 +85,7 @@ services:
       - monit
       - api
     depends_on:
-      - database-api-cursos
+      - api-cursos
 
   grafana-api-cursos:
     image: grafana/grafana
@@ -82,3 +114,25 @@ services:
       - monit
     depends_on:
       - grafana-api-cursos
+
+  collector-api-cursos:
+    image: otel/opentelemetry-collector:latest
+    container_name: collector-api-cursos
+    volumes:
+      - ./collector/otel-collector-config.yaml:/etc/otel-collector-config.yaml
+    command: ["--config=/etc/otel-collector-config.yaml"]
+    networks:
+      - api
+      - monit
+    depends_on:
+      - loki-api-cursos
+
+  jaeger-api-cursos:
+    image: jaegertracing/opentelemetry-all-in-one
+    container_name: jaeger-api-cursos
+    ports:
+      - 16686:16686
+    networks:
+      - monit
+    depends_on:
+      - collector-api-cursos

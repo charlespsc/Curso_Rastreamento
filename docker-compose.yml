@@ -4,8 +4,12 @@ networks:
   public:
   monit:
   data:
+    internal:
+      true
   api:
-  
+    internal:
+      true
+ 
 services:
 
   database-api-cursos:
@@ -17,8 +21,10 @@ services:
       timeout: 45s
       interval: 10s
       retries: 10
-    ports:
-      - 5432:5432
+    volumes:
+      - ./postgres/data:/var/lib/postgresql/data
+    expose:
+      - 5432
     networks:
       - data
   
@@ -26,12 +32,60 @@ services:
     image: redis
     container_name: cache-api-cursos
     restart: unless-stopped
-    ports:
-      - 6379:6379
+    expose:
+      - 6379
     networks:
       - data
     depends_on:
       - database-api-cursos
+
+  api-cursos:
+    build:
+      context: ./logs/
+      dockerfile: Dockerfile
+    image: api-cursos
+    container_name: api-cursos
+    environment:
+      - SPRING_REDIS_HOST=cache-api-cursos
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://database-api-cursos:5432/logsdb
+      - OTEL_SERVICE_NAME=api-cursos
+      - OTEL_TRACES_EXPORTER=otlp
+      - OTEL_METRICS_EXPORTER=none
+      - OTEL_INTEGRATION_JDBC_DATASOURCE_ENABLED=true
+      - OTEL_INSTRUMENTATION_JDBC_DATASOURCE_ENABLED=true
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://collector-api-cursos:4318/
+      - OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+    restart: unless-stopped
+    expose:
+      - 8080
+    networks:
+      - api
+      - data
+    healthcheck:
+      test: "curl -sS http://api-cursos:8080/actuator/health"
+      interval: 1s
+      timeout: 30s
+      retries: 60
+    depends_on:
+      - cache-api-cursos
+
+  proxy-api-cursos:
+    build:
+      context: ./nginx/
+      dockerfile: Dockerfile
+    image: proxy-api-cursos
+    container_name: proxy-api-cursos
+    restart: unless-stopped
+    volumes:
+      - ./nginx/opentelemetry_module.conf:/etc/nginx/conf.d/opentelemetry_module.conf
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf
+    ports:
+      - 80:80
+    networks:
+      - public
+      - api
+    depends_on:
+      - api-cursos
 
   prometheus-api-cursos:
     image: prom/prometheus:latest
@@ -53,7 +107,7 @@ services:
       - monit
       - api
     depends_on:
-      - database-api-cursos
+      - proxy-api-cursos
 
   grafana-api-cursos:
     image: grafana/grafana
@@ -75,14 +129,14 @@ services:
     command: 
       - -config.file=/etc/loki/local-config.yaml
       - -print-config-stderr=true
-    ports:
-      - 3100:3100
+    expose:
+      - 3100
     networks:
       - api
       - monit
     depends_on:
       - grafana-api-cursos
-      
+
   collector-api-cursos:
     image: otel/opentelemetry-collector:latest
     container_name: collector-api-cursos
@@ -104,3 +158,12 @@ services:
       - monit
     depends_on:
       - collector-api-cursos
+
+  client-api-cursos:
+    image: kdpsc/alura:client-api-cursos
+    container_name: client-api-cursos
+    restart: unless-stopped
+    networks:
+      - public
+    depends_on:
+      - jaeger-api-cursos

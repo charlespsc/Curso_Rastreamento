@@ -1,0 +1,17 @@
+{
+	"ulid": "01HKXRC4BV4YAF2APWDCBRX58K",
+	"minTime": 1705012559726,
+	"maxTime": 1705017600000,
+	"stats": {
+		"numSamples": 334295,
+		"numSeries": 1776,
+		"numChunks": 2947
+	},
+	"compaction": {
+		"level": 1,
+		"sources": [
+			"01HKXRC4BV4YAF2APWDCBRX58K"
+		]
+	},
+	"version": 1
+}
